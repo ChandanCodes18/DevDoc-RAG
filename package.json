@@ -1,0 +1,27 @@
+{
+  "name": "devdoc-rag",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@langchain/core": "^1.2.6",
+    "@langchain/google-genai": "^2.2.0",
+    "@langchain/openai": "^1.5.7",
+    "@langchain/textsplitters": "^1.0.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "framer-motion": "^13.1.0",
+    "langchain": "^1.5.7",
+    "multer": "^2.2.0",
+    "pg": "^8.22.0",
+    "zod": "^4.4.3"
+  }
+}

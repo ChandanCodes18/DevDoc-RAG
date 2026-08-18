@@ -1,0 +1,173 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap');
+
+:root{
+  --obsidian : #05070a;
+  --glass-bg : rgba(255, 255, 255, 0.03);
+
+  --border-subtle : rgba(255, 255, 255, 0.08);
+  
+  --indigo-accent: #4f46e5;
+  --violet-highlight: #8b5cf6;
+  
+  --text-primary: #f3f4f6;
+  --text-secondary: #94a3b8;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--obsidian);
+  color: var(--text-primary);
+  
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh; 
+}
+
+/* 1. Morph: Organic blob morphing animation */
+@keyframes morph {
+  0%, 100% {
+    border-radius: 50%;
+  }
+  25% {
+    border-radius: 40% 60% 60% 40% / 50% 30% 70% 50%;
+  }
+  50% {
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  }
+  75% {
+    border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.app-wrapper {
+  width: 100%;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+@media (min-width: 768px) {
+  .app-wrapper {
+    max-width: 440px;
+    max-height: 85vh;
+    height: 100%;
+    border-radius: 28px;
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7),
+                0 0 20px 0 rgba(79, 70, 229, 0.1);
+  }
+}
+
+.orb-container{
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 250px;
+  margin: 40px 0;
+}
+
+.orb-container.loading{
+  animation: pulse 1.2s ease-in-out infinite, spin 5s linear infinite;
+}
+
+.fluid-orb{
+  width: 160px;
+  height: 160px;
+  position: relative;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.4);
+  transition: all 0.5s ease-in-out;
+}
+
+.fluid-orb.loading{
+  animation: pulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 60px rgba(139, 92, 246, 0.8), 0 0 100px rgba(79, 70, 229, 0.4);
+}
+
+.blob-1,
+.blob-2 {
+  position: absolute;
+  filter: blur(12px);
+}
+
+.blob-1 {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+  animation: morph 14s ease-in-out infinite, spin 20s linear infinite;
+  z-index: 1;
+}
+
+.blob-2 {
+  top: -10px;
+  left: -10px;
+  width: calc(100% + 20px);
+  height: calc(100% + 20px);
+  background: linear-gradient(135deg, #f000ff 0%, #7b00ff 100%);
+  animation: morph 8s ease-in-out infinite, spin 12s linear infinite reverse;
+  z-index: 2;
+  opacity: 0.85;
+}
+
+.fluid-orb.loading .blob-1 {
+  animation: morph 4s ease-in-out infinite, spin 5s linear infinite;
+}
+
+.fluid-orb.loading .blob-2 {
+  animation: morph 2.5s ease-in-out infinite, spin 3s linear infinite reverse;
+}
+
+.glass-reflection{
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0) 50%);
+  pointer-events: none;
+  z-index: 3;
+}

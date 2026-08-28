@@ -5,6 +5,8 @@ import cors from "cors";
 import { Pool } from "pg";
 import multer from "multer";
 import path from "path";
+import { LRUCache } from "lru-cache";
+import AdmZip from "adm-zip";
 
 import {
   GoogleGenerativeAIEmbeddings,
@@ -14,6 +16,13 @@ import {
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const options = {
+  max: 500,
+  ttl: 1000*60*60
+};
+
+const embeddingCache = new LRUCache(options);
 
 const EXTENSION_TO_LANGUAGE = {
   js: "js",
@@ -80,6 +89,102 @@ function typeOfFile(fileName) {
 }
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+app.post("/api/upload/zip", upload.single("codeFile"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Please upload a file" });
+    }
+
+    const repoName = req.file.originalname.replace(/\.zip$/i, "");
+    const zip = new AdmZip(req.file.buffer);
+    const validFiles = [];
+
+    for (const entry of zip.getEntries()) {
+      if (entry.isDirectory) {
+        continue;
+      }
+
+      const filePath = (entry.entryName || entry.name).replace(/\\/g, "/");
+      if (
+        filePath.includes("node_modules/") ||
+        filePath.includes(".git/") ||
+        filePath.includes("dist/") ||
+        filePath.includes("__MACOSX") ||
+        filePath.endsWith("/.DS_Store") ||
+        filePath === ".DS_Store"
+      ) {
+        continue;
+      }
+
+      const fileType = typeOfFile(filePath);
+      if (fileType === "Unsupported") {
+        continue;
+      }
+
+      const fileContent = entry.getData().toString("utf8");
+      if (!fileContent || !fileContent.trim()) {
+        continue;
+      }
+
+      validFiles.push({ path: filePath, type: fileType, content: fileContent });
+    }
+
+    console.log(`Successfully extracted ${validFiles.length} files.`);
+
+    if (validFiles.length === 0) {
+      return res.status(400).json({
+        error: "The ZIP contains no supported, non-empty code files.",
+      });
+    }
+
+    const repositoryResult = await pool.query(
+      "INSERT INTO repositories (repo_name) VALUES ($1) RETURNING id",
+      [repoName],
+    );
+    const repoId = repositoryResult.rows[0].id;
+    const embeddings = new GoogleGenerativeAIEmbeddings({
+      model: "gemini-embedding-001",
+      apiKey: process.env.GOOGLE_API_KEY,
+    });
+    let chunkCount = 0;
+
+    for (const file of validFiles) {
+      const splitter = RecursiveCharacterTextSplitter.fromLanguage(
+        file.type,
+        { chunkSize: 200, chunkOverlap: 50 },
+      );
+      const chunks = await splitter.createDocuments([file.content]);
+      if (chunks.length === 0) continue;
+
+      const vectors = await embeddings.embedDocuments(
+        chunks.map((chunk) => chunk.pageContent),
+      );
+
+      for (let index = 0; index < chunks.length; index++) {
+        const chunk = chunks[index];
+        await pool.query(
+          "INSERT INTO code_chunks (repo_id, file_path, file_extension, start_line, end_line, chunk_content, embedding) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+          [
+            repoId,
+            file.path,
+            file.type,
+            chunk.metadata.loc.lines.from,
+            chunk.metadata.loc.lines.to,
+            chunk.pageContent,
+            JSON.stringify(vectors[index].slice(0, 768)),
+          ],
+        );
+        chunkCount++;
+      }
+    }
+
+    return res.status(200).json({ repoId, repoName, fileCount: validFiles.length, chunkCount });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+})
 
 app.post("/api/upload", upload.single("codeFile"), async (req, res) => {
   try {
@@ -190,8 +295,19 @@ app.post("/api/query", async (req, res) => {
       apiKey: process.env.GOOGLE_API_KEY,
     });
 
-    const queryVectors = await queryEmbeddings.embedQuery(ques);
-    const slicedVectors = queryVectors.slice(0, 768);
+    let slicedVectors ;
+    
+    const cacheKey = ques.trim().toLowerCase();
+    
+    if (embeddingCache.has(cacheKey)) {
+      slicedVectors = embeddingCache.get(cacheKey);
+    }
+    else{
+      const queryVectors = await queryEmbeddings.embedQuery(ques);
+      slicedVectors = queryVectors.slice(0,768); 
+
+      embeddingCache.set(cacheKey,slicedVectors);
+    }
 
     const sqlQuery =
       "SELECT chunk_content, file_path, start_line, end_line, (embedding <=> $1) as distance FROM code_chunks WHERE repo_id = $2 ORDER BY distance ASC LIMIT 5;";
@@ -224,11 +340,10 @@ Code Context: ${contextString}
 User Question: ${ques} `;
 
     const response = await gemini.invoke(prompt);
-    
-    return res.status(200).json({
-        "answer" : response.content
-    })
 
+    return res.status(200).json({
+      answer: response.content,
+    });
   } catch (error) {
     return res.status(500).json({
       error,

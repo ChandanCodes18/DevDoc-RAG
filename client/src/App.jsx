@@ -64,7 +64,46 @@ function App() {
       ]);
     }
   };
-  const handleGithubImport = async () => {};
+  const handleGithubImport = async () => {
+    if(!gitUrl.trim()) return ;
+
+    setIsLoading(true);
+    setIsAttachOpen(false);
+
+    try {
+      const res = await fetch(`${API_URL}/api/upload/github`,{
+        method : "POST",
+        headers : {"Content-Type" : "application/json"},
+        body : JSON.stringify({ githubUrl : gitUrl })
+      })
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || data.error || "Failed to import GitHub repository");
+      }
+
+      setRepositories((prev) => [...prev, { id: data.repoId, repo_name: data.repoName }]);
+      setActiveRepoId(data.repoId);
+      setGitUrl("");
+
+      setMessages((prev) => [
+        ...prev,
+        { sender: "bot", text: data.message || "Successfully imported Github Repository !" },
+      ]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "bot",
+          text: error.message || "⚠️ Could not reach the server. Make sure the backend is running.",
+        },
+      ]);
+    }
+    finally{
+      setIsLoading(false);
+    }
+  };
 
   const handleSend = async () => {
     const trimmed = inputValue.trim();

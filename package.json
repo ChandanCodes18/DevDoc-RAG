@@ -4,6 +4,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "build": "npm --prefix client install --legacy-peer-deps && npm --prefix client run build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

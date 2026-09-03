@@ -154,7 +154,10 @@ app.post("/api/upload/zip", upload.single("codeFile"), async (req, res) => {
         chunkSize: 200,
         chunkOverlap: 50,
       });
-      const chunks = await splitter.createDocuments([file.content]);
+      const rawChunks = await splitter.createDocuments([file.content]);
+      const chunks = rawChunks.filter(
+        (chunk) => chunk.pageContent && chunk.pageContent.trim().length > 0,
+      );
       if (chunks.length === 0) continue;
 
       const vectors = await embeddings.embedDocuments(
@@ -163,16 +166,19 @@ app.post("/api/upload/zip", upload.single("codeFile"), async (req, res) => {
 
       for (let index = 0; index < chunks.length; index++) {
         const chunk = chunks[index];
+        const vector = vectors[index];
+        if (!vector || vector.length === 0) continue;
+
         await pool.query(
           "INSERT INTO code_chunks (repo_id, file_path, file_extension, start_line, end_line, chunk_content, embedding) VALUES ($1, $2, $3, $4, $5, $6, $7)",
           [
             repoId,
             file.path,
             file.type,
-            chunk.metadata.loc.lines.from,
-            chunk.metadata.loc.lines.to,
+            chunk.metadata?.loc?.lines?.from || 1,
+            chunk.metadata?.loc?.lines?.to || 1,
             chunk.pageContent,
-            JSON.stringify(vectors[index].slice(0, 768)),
+            JSON.stringify(vector.slice(0, 768)),
           ],
         );
         chunkCount++;
@@ -211,7 +217,10 @@ app.post("/api/upload", upload.single("codeFile"), async (req, res) => {
       chunkSize: 200,
       chunkOverlap: 50,
     });
-    const chunks = await splitter.createDocuments([fileContent]);
+    const rawChunks = await splitter.createDocuments([fileContent]);
+    const chunks = rawChunks.filter(
+      (chunk) => chunk.pageContent && chunk.pageContent.trim().length > 0,
+    );
 
     if (chunks.length === 0) {
       return res.status(400).json({
@@ -249,10 +258,13 @@ app.post("/api/upload", upload.single("codeFile"), async (req, res) => {
     // Write each chunk and its resp. vector embedding into code_chunks Table
 
     for (let i = 0; i < chunks.length; i++) {
-      let startLine = chunks[i].metadata.loc.lines.from;
-      let endLine = chunks[i].metadata.loc.lines.to;
+      const vector = vectors[i];
+      if (!vector || vector.length === 0) continue;
+
+      let startLine = chunks[i].metadata?.loc?.lines?.from || 1;
+      let endLine = chunks[i].metadata?.loc?.lines?.to || 1;
       let chunkContent = chunks[i].pageContent;
-      let embeddingString = JSON.stringify(vectors[i].slice(0, 768));
+      let embeddingString = JSON.stringify(vector.slice(0, 768));
 
       // let parameters = [repoId, fileName, language, startLine, endLine, chunkContent, embeddingString];
       let insertQuery =
@@ -444,7 +456,10 @@ app.post("/api/upload/github", async (req, res) => {
         chunkOverlap: 50,
       });
 
-      const chunks = await splitter.createDocuments([fileContent]);
+      const rawChunks = await splitter.createDocuments([fileContent]);
+      const chunks = rawChunks.filter(
+        (chunk) => chunk.pageContent && chunk.pageContent.trim().length > 0,
+      );
       if (chunks.length === 0) continue;
 
       const vectors = await embeddings.embedDocuments(
@@ -453,10 +468,13 @@ app.post("/api/upload/github", async (req, res) => {
 
       for (let index = 0; index < chunks.length; index++) {
         const chunk = chunks[index];
+        const vector = vectors[index];
+        if (!vector || vector.length === 0) continue;
+
         const startLine = chunk.metadata?.loc?.lines?.from || 1;
         const endLine = chunk.metadata?.loc?.lines?.to || 1;
         const chunkContent = chunk.pageContent;
-        const embeddingString = JSON.stringify(vectors[index].slice(0, 768));
+        const embeddingString = JSON.stringify(vector.slice(0, 768));
 
         await pool.query(
           "INSERT INTO code_chunks (repo_id, file_path, file_extension, start_line, end_line, chunk_content, embedding) VALUES ($1, $2, $3, $4, $5, $6, $7)",

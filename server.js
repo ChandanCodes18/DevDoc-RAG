@@ -360,6 +360,7 @@ app.post("/api/upload/github", async (req, res) => {
       {
         headers: {
           "User-Agent": "DevDoc-RAG",
+          "Authorization" : `Bearer ${process.env.GITHUB_TOKEN}`
         },
       },
     );
@@ -379,6 +380,7 @@ app.post("/api/upload/github", async (req, res) => {
       {
         headers: {
           "User-Agent": "DevDoc-RAG",
+          "Authorization" : `Bearer ${process.env.GITHUB_TOKEN}`
         },
       },
     );
@@ -552,7 +554,7 @@ app.post("/api/query", async (req, res) => {
     }
 
     const sqlQuery =
-      "SELECT chunk_content, file_path, start_line, end_line, (embedding <=> $1) as distance FROM code_chunks WHERE repo_id = $2 ORDER BY distance ASC LIMIT 5;";
+      "SELECT chunk_content, file_path, start_line, end_line, (embedding <=> $1) as distance FROM code_chunks WHERE repo_id = $2 ORDER BY distance ASC LIMIT 8;";
 
     const searchResult = await pool.query(sqlQuery, [
       JSON.stringify(slicedVectors),
@@ -567,6 +569,12 @@ app.post("/api/query", async (req, res) => {
       contextString += snippetText;
     }
 
+        // Fetch distinct file tree for the repository
+    const fileListQuery = "SELECT DISTINCT file_path FROM code_chunks WHERE repo_id = $1 ORDER BY file_path ASC;";
+    const fileListResult = await pool.query(fileListQuery, [repoId]);
+    const projectFiles = fileListResult.rows.map(r => r.file_path);
+    const projectFilesString = projectFiles.length > 0 ? projectFiles.join("\n") : "No files found.";
+
     const gemini = new ChatGoogleGenerativeAI({
       model: "gemini-3.5-flash-lite",
       apiKey: process.env.GOOGLE_API_KEY,
@@ -578,33 +586,36 @@ app.post("/api/query", async (req, res) => {
                   --- CORE DIRECTIVES & GUIDELINES ---
 
 Grounding & Codebase Awareness:
-
 Ground all factual statements about the existing codebase in the provided Code Context and ongoing Chat History.
 When explaining how existing functions, classes, or modules work, strictly reference the provided code snippets.
-Code Modifications & Logic Variations:
 
+Code Modifications & Logic Variations:
 If the user asks to modify logic (e.g. changing left-shift to right-shift, adding features, refactoring, or optimizing loops), provide complete, production-ready, and syntactically correct code blocks with markdown syntax highlighting.
 Accompany code changes with a clear explanation of how the new algorithm operates.
+
 Computer Science Fundamentals & Algorithms:
-
 When asked about underlying CS fundamentals, algorithms, data structures, or time/space complexities (Big-O) relevant to the code, provide intuitive, step-by-step educational explanations tailored to the user's project.
+
 Simplification & Educational Walkthroughs:
-
 When the user asks to explain code in simple terms, break down the logic using intuitive analogies, structured bullet points, and beginner-friendly language without unnecessary jargon.
+
 Code Reviews & Constructive Critique:
-
 When asked for a code review or suggestions, evaluate edge cases, potential runtime bugs, off-by-one errors, performance bottlenecks, and code readability, offering clear, actionable recommendations.
+
 Strict Citations:
-
 Whenever referencing existing code from the codebase, explicitly cite the corresponding file path and line numbers using the format: [filepath Lines X-Y] (for example: "[largeelement.java Lines 3-12]").
-Conversational Memory & Politeness:
 
+Conversational Memory & Politeness:
 Use the Chat History to maintain context for multi-turn conversations and follow-up questions (e.g., "give me the code", "explain the 2nd point", "how do I run it?").
 Respond warmly and professionally to pleasantries, compliments, or feedback (e.g., "thanks", "good job").
+  
 Graceful Fallback:
-
 Only state "I cannot find the relevant code in the provided codebase." if the user asks about an explicit file, endpoint, or feature that does not exist in the context and cannot be deduced conversationally.
+
+Project File Structure Context:
+When asked to list files, describe the project structure, or find specific files, refer directly to the Project File Structure list provided below. This list represents the absolute source of truth for all files within the repository.
 Code Context: ${contextString}
+Project File Structure: ${projectFilesString}
 Chat History:${history.map((m) => m.sender + ": " + m.text).join("\n")}
 User Question: ${ques} `;
 

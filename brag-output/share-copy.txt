@@ -1,0 +1,5 @@
+﻿Drop a GitHub repo. Ask it anything. Get real answers with code.
+
+DevDocs AI ingests your codebase and lets you chat with it — markdown responses, syntax-highlighted code, right out of the box.
+
+Built with React, LangChain, and RAG. 🚀

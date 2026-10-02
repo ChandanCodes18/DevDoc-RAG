@@ -88,6 +88,167 @@ function typeOfFile(fileName) {
   return resolved !== undefined ? resolved : "Unsupported";
 }
 
+const IGNORED_DIRS = [
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".nuxt",
+  ".output",
+  ".cache",
+  "coverage",
+  ".vscode",
+  ".idea",
+  "__MACOSX",
+  "vendor",
+  "bin",
+  "obj",
+  "target",
+];
+
+const IGNORED_FILES = [
+  ".ds_store",
+  "thumbs.db",
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "composer.lock",
+];
+
+function isIgnoredPath(filePath) {
+  if (!filePath) return true;
+  const normalized = filePath.replace(/\\/g, "/").toLowerCase();
+  const segments = normalized.split("/");
+  const fileName = segments[segments.length - 1];
+
+  if (segments.some((seg) => IGNORED_DIRS.includes(seg))) {
+    return true;
+  }
+  if (IGNORED_FILES.includes(fileName)) {
+    return true;
+  }
+  if (
+    fileName.endsWith(".min.js") ||
+    fileName.endsWith(".min.css") ||
+    fileName.endsWith(".bundle.js") ||
+    fileName.endsWith(".map")
+  ) {
+    return true;
+  }
+  if (fileName.startsWith(".env") || fileName.includes(".env.")) {
+    return true;
+  }
+  return false;
+}
+
+function getGithubHeaders() {
+  const headers = {
+    "User-Agent": "DevDoc-RAG",
+    Accept: "application/vnd.github.v3+json",
+  };
+  const token = process.env.GITHUB_TOKEN ? process.env.GITHUB_TOKEN.trim() : "";
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+async function ingestCodeFiles(repoId, filesWithContent) {
+  const embeddings = new GoogleGenerativeAIEmbeddings({
+    model: "gemini-embedding-001",
+    apiKey: process.env.GOOGLE_API_KEY,
+  });
+
+  const allChunks = [];
+  const MAX_FILE_SIZE = 150000; // Skip files > 150KB (compiled bundles/data files)
+
+  for (const file of filesWithContent) {
+    if (!file.content || !file.content.trim()) continue;
+    if (file.content.length > MAX_FILE_SIZE) {
+      console.warn(`Skipping large file (${file.content.length} chars): ${file.path}`);
+      continue;
+    }
+
+    try {
+      const splitter = RecursiveCharacterTextSplitter.fromLanguage(file.type, {
+        chunkSize: 1200,
+        chunkOverlap: 150,
+      });
+      const rawChunks = await splitter.createDocuments([file.content]);
+      const validChunks = rawChunks.filter(
+        (chunk) => chunk.pageContent && chunk.pageContent.trim().length > 0,
+      );
+
+      for (const chunk of validChunks) {
+        allChunks.push({
+          repoId,
+          filePath: file.path,
+          fileType: file.type,
+          startLine: chunk.metadata?.loc?.lines?.from || 1,
+          endLine: chunk.metadata?.loc?.lines?.to || 1,
+          content: chunk.pageContent,
+        });
+      }
+    } catch (err) {
+      console.error(`Error splitting file ${file.path}:`, err.message);
+    }
+  }
+
+  if (allChunks.length === 0) {
+    return 0;
+  }
+
+  console.log(`Ingesting ${allChunks.length} chunks into vector database in batches...`);
+
+  // Batch embeddings and multi-row database inserts (50 chunks per batch)
+  const BATCH_SIZE = 50;
+  let totalSaved = 0;
+
+  for (let i = 0; i < allChunks.length; i += BATCH_SIZE) {
+    const batch = allChunks.slice(i, i + BATCH_SIZE);
+    const textBatch = batch.map((c) => c.content);
+
+    // Single Google Gemini embedding request for the batch
+    const vectors = await embeddings.embedDocuments(textBatch);
+
+    // Multi-row INSERT into Supabase PostgreSQL
+    const valueClauses = [];
+    const params = [];
+
+    batch.forEach((c, idx) => {
+      const vector = vectors[idx];
+      if (!vector || vector.length === 0) return;
+
+      const pOffset = params.length;
+      valueClauses.push(
+        `($${pOffset + 1}, $${pOffset + 2}, $${pOffset + 3}, $${pOffset + 4}, $${pOffset + 5}, $${pOffset + 6}, $${pOffset + 7})`,
+      );
+      params.push(
+        c.repoId,
+        c.filePath,
+        c.fileType,
+        c.startLine,
+        c.endLine,
+        c.content,
+        JSON.stringify(vector.slice(0, 768)),
+      );
+    });
+
+    if (valueClauses.length > 0) {
+      const insertQuery = `
+        INSERT INTO code_chunks (repo_id, file_path, file_extension, start_line, end_line, chunk_content, embedding)
+        VALUES ${valueClauses.join(", ")}
+      `;
+      await pool.query(insertQuery, params);
+      totalSaved += valueClauses.length;
+    }
+  }
+
+  return totalSaved;
+}
+
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.post("/api/upload/zip", upload.single("codeFile"), async (req, res) => {
@@ -100,20 +261,13 @@ app.post("/api/upload/zip", upload.single("codeFile"), async (req, res) => {
     const zip = new AdmZip(req.file.buffer);
     const validFiles = [];
 
-    for (const entry of zip.getEntries()) {
+    for (const  entry of zip.getEntries()) {
       if (entry.isDirectory) {
         continue;
       }
 
       const filePath = (entry.entryName || entry.name).replace(/\\/g, "/");
-      if (
-        filePath.includes("node_modules/") ||
-        filePath.includes(".git/") ||
-        filePath.includes("dist/") ||
-        filePath.includes("__MACOSX") ||
-        filePath.endsWith("/.DS_Store") ||
-        filePath === ".DS_Store"
-      ) {
+      if (isIgnoredPath(filePath)) {
         continue;
       }
 
@@ -143,52 +297,14 @@ app.post("/api/upload/zip", upload.single("codeFile"), async (req, res) => {
       [repoName],
     );
     const repoId = repositoryResult.rows[0].id;
-    const embeddings = new GoogleGenerativeAIEmbeddings({
-      model: "gemini-embedding-001",
-      apiKey: process.env.GOOGLE_API_KEY,
-    });
-    let chunkCount = 0;
 
-    for (const file of validFiles) {
-      const splitter = RecursiveCharacterTextSplitter.fromLanguage(file.type, {
-        chunkSize: 200,
-        chunkOverlap: 50,
-      });
-      const rawChunks = await splitter.createDocuments([file.content]);
-      const chunks = rawChunks.filter(
-        (chunk) => chunk.pageContent && chunk.pageContent.trim().length > 0,
-      );
-      if (chunks.length === 0) continue;
-
-      const vectors = await embeddings.embedDocuments(
-        chunks.map((chunk) => chunk.pageContent),
-      );
-
-      for (let index = 0; index < chunks.length; index++) {
-        const chunk = chunks[index];
-        const vector = vectors[index];
-        if (!vector || vector.length === 0) continue;
-
-        await pool.query(
-          "INSERT INTO code_chunks (repo_id, file_path, file_extension, start_line, end_line, chunk_content, embedding) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-          [
-            repoId,
-            file.path,
-            file.type,
-            chunk.metadata?.loc?.lines?.from || 1,
-            chunk.metadata?.loc?.lines?.to || 1,
-            chunk.pageContent,
-            JSON.stringify(vector.slice(0, 768)),
-          ],
-        );
-        chunkCount++;
-      }
-    }
+    const chunkCount = await ingestCodeFiles(repoId, validFiles);
 
     return res
       .status(200)
       .json({ repoId, repoName, fileCount: validFiles.length, chunkCount });
   } catch (error) {
+    console.error("ZIP upload error:", error);
     return res.status(500).json({ error: error.message });
   }
 });
@@ -214,8 +330,8 @@ app.post("/api/upload", upload.single("codeFile"), async (req, res) => {
     }
 
     const splitter = RecursiveCharacterTextSplitter.fromLanguage(language, {
-      chunkSize: 200,
-      chunkOverlap: 50,
+      chunkSize: 1200,
+      chunkOverlap: 150,
     });
     const rawChunks = await splitter.createDocuments([fileContent]);
     const chunks = rawChunks.filter(
@@ -354,21 +470,26 @@ app.post("/api/upload/github", async (req, res) => {
       });
     }
 
+    const headers = getGithubHeaders();
+
     // 1. Fetch Repository Details to get default_branch
     const repoRes = await fetch(
       `https://api.github.com/repos/${githubAccount}/${projectName}`,
-      {
-        headers: {
-          "User-Agent": "DevDoc-RAG",
-          "Authorization" : `Bearer ${process.env.GITHUB_TOKEN}`
-        },
-      },
+      { headers },
     );
 
     if (!repoRes.ok) {
-      return res.status(repoRes.status).json({
-        message: `Failed to fetch GitHub repository (${repoRes.statusText}). Make sure the repository is public.`,
-      });
+      const errBody = await repoRes.json().catch(() => ({}));
+      const reason = errBody.message || repoRes.statusText;
+      let userFriendlyMsg = `Failed to fetch GitHub repository (${reason}).`;
+      if (repoRes.status === 403 || repoRes.status === 429) {
+        userFriendlyMsg = `GitHub API rate limit exceeded (${reason}). Please ensure GITHUB_TOKEN is configured in your .env or Render dashboard to enable 5,000 requests/hour.`;
+      } else if (repoRes.status === 404) {
+        userFriendlyMsg = `GitHub repository "${githubAccount}/${projectName}" not found. Make sure the repository is public and the URL is correct.`;
+      } else if (repoRes.status === 401) {
+        userFriendlyMsg = `GitHub authentication failed (${reason}). Please verify the GITHUB_TOKEN in your .env file.`;
+      }
+      return res.status(repoRes.status).json({ message: userFriendlyMsg });
     }
 
     const repoData = await repoRes.json();
@@ -377,17 +498,14 @@ app.post("/api/upload/github", async (req, res) => {
     // 2. Fetch the Full Recursive File Tree
     const treeRes = await fetch(
       `https://api.github.com/repos/${githubAccount}/${projectName}/git/trees/${default_branch}?recursive=1`,
-      {
-        headers: {
-          "User-Agent": "DevDoc-RAG",
-          "Authorization" : `Bearer ${process.env.GITHUB_TOKEN}`
-        },
-      },
+      { headers },
     );
 
     if (!treeRes.ok) {
+      const errBody = await treeRes.json().catch(() => ({}));
+      const reason = errBody.message || treeRes.statusText;
       return res.status(treeRes.status).json({
-        message: `Failed to fetch repository file tree: ${treeRes.statusText}`,
+        message: `Failed to fetch repository file tree: ${reason}`,
       });
     }
 
@@ -402,15 +520,7 @@ app.post("/api/upload/github", async (req, res) => {
       }
 
       const filePath = item.path;
-      if (
-        filePath.includes("node_modules/") ||
-        filePath.includes(".git/") ||
-        filePath.includes("dist/") ||
-        filePath.includes("__MACOSX") ||
-        filePath.endsWith("/.DS_Store") ||
-        filePath.includes(".env") ||
-        filePath === ".DS_Store"
-      ) {
+      if (isIgnoredPath(filePath)) {
         continue;
       }
 
@@ -428,77 +538,56 @@ app.post("/api/upload/github", async (req, res) => {
       });
     }
 
-    // 4. Insert Repository Record into Supabase
+    // 4. Download Raw Code in parallel batches (10 files concurrently)
+    const filesWithContent = [];
+    const CONCURRENCY = 10;
+    for (let i = 0; i < validFiles.length; i += CONCURRENCY) {
+      const batch = validFiles.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async (file) => {
+          try {
+            const rawUrl = `https://raw.githubusercontent.com/${githubAccount}/${projectName}/${default_branch}/${file.path}`;
+            const rawRes = await fetch(rawUrl);
+            if (!rawRes.ok) return null;
+
+            const fileContent = await rawRes.text();
+            if (!fileContent || !fileContent.trim()) return null;
+            return { path: file.path, type: file.type, content: fileContent };
+          } catch (err) {
+            console.error(`Failed to fetch file ${file.path}:`, err.message);
+            return null;
+          }
+        }),
+      );
+
+      for (const item of batchResults) {
+        if (item) {
+          filesWithContent.push(item);
+        }
+      }
+    }
+
+    if (filesWithContent.length === 0) {
+      return res.status(400).json({
+        message: "Could not download any non-empty code files from the repository.",
+      });
+    }
+
+    // 5. Insert Repository Record into Supabase
     const repositoryResult = await pool.query(
       "INSERT INTO repositories (repo_name) VALUES ($1) RETURNING id",
       [projectName],
     );
     const repoId = repositoryResult.rows[0].id;
 
-    // 5. Download Raw Code & Ingest into code_chunks
-    const embeddings = new GoogleGenerativeAIEmbeddings({
-      model: "gemini-embedding-001",
-      apiKey: process.env.GOOGLE_API_KEY,
-    });
+    // 6. Ingest & Embed Chunks
+    const chunkCount = await ingestCodeFiles(repoId, filesWithContent);
 
-    let chunkCount = 0;
-
-    for (const file of validFiles) {
-      const rawUrl = `https://raw.githubusercontent.com/${githubAccount}/${projectName}/${default_branch}/${file.path}`;
-      const rawRes = await fetch(rawUrl);
-      if (!rawRes.ok) continue;
-
-      const fileContent = await rawRes.text();
-      if (!fileContent || !fileContent.trim()) {
-        continue;
-      }
-
-      const splitter = RecursiveCharacterTextSplitter.fromLanguage(file.type, {
-        chunkSize: 200,
-        chunkOverlap: 50,
-      });
-
-      const rawChunks = await splitter.createDocuments([fileContent]);
-      const chunks = rawChunks.filter(
-        (chunk) => chunk.pageContent && chunk.pageContent.trim().length > 0,
-      );
-      if (chunks.length === 0) continue;
-
-      const vectors = await embeddings.embedDocuments(
-        chunks.map((chunk) => chunk.pageContent),
-      );
-
-      for (let index = 0; index < chunks.length; index++) {
-        const chunk = chunks[index];
-        const vector = vectors[index];
-        if (!vector || vector.length === 0) continue;
-
-        const startLine = chunk.metadata?.loc?.lines?.from || 1;
-        const endLine = chunk.metadata?.loc?.lines?.to || 1;
-        const chunkContent = chunk.pageContent;
-        const embeddingString = JSON.stringify(vector.slice(0, 768));
-
-        await pool.query(
-          "INSERT INTO code_chunks (repo_id, file_path, file_extension, start_line, end_line, chunk_content, embedding) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-          [
-            repoId,
-            file.path,
-            file.type,
-            startLine,
-            endLine,
-            chunkContent,
-            embeddingString,
-          ],
-        );
-        chunkCount++;
-      }
-    }
-
-    // 6. Return Success Response
+    // 7. Return Success Response
     return res.status(200).json({
       repoId,
       repoName: projectName,
-      fileCount: validFiles.length,
+      fileCount: filesWithContent.length,
       chunkCount,
       message: `Successfully imported and embedded ${projectName}!`,
     });

@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DevDocs AI — Brag Video</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #05070a;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    #root {
+      width: 1920px;
+      height: 1080px;
+      position: relative;
+      background: #05070a;
+      overflow: hidden;
+    }
+
+    /* ── SCENE BASE ─────────────────── */
+    .clip {
+      position: absolute;
+      top: 0; left: 0;
+      width: 1920px;
+      height: 1080px;
+      opacity: 0;
+    }
+
+    /* ── SCENE 1: HOOK ──────────────── */
+    #scene-hook {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 56px;
+      background: #05070a;
+    }
+
+    #hook-text {
+      font-family: 'Outfit', sans-serif;
+      font-size: 96px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #f3f4f6;
+      text-shadow: 0 0 40px rgba(124, 58, 237, 0.7), 0 0 80px rgba(79, 70, 229, 0.4);
+      opacity: 0;
+      text-align: center;
+    }
+
+    #hook-orb-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+    }
+
+    .orb {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #818cf8, #4f46e5 40%, #7c3aed 70%, #1e0a44);
+      box-shadow:
+        0 0 40px 12px rgba(79, 70, 229, 0.45),
+        0 0 80px 24px rgba(124, 58, 237, 0.25),
+        inset 0 2px 6px rgba(255,255,255,0.18);
+    }
+
+    /* ── SCENE 2: IMPORT ──────────────── */
+    #scene-import {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #05070a;
+      gap: 0;
+    }
+
+    .chat-shell {
+      width: 860px;
+      height: 600px;
+      display: flex;
+      flex-direction: column;
+      border-radius: 24px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.07);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      flex-shrink: 0;
+    }
+
+    .header-pill {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 20px;
+      padding: 6px 18px;
+      font-size: 14px;
+      color: #f3f4f6;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .menu-btn {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: transparent;
+      border: none;
+      color: #f3f4f6;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .chat-body {
+      flex: 1;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .bottom-dock {
+      flex-shrink: 0;
+      padding: 12px 20px 20px;
+      position: relative;
+    }
+
+    /* Import popup */
+    .attach-popup {
+      background: rgba(10,15,24,0.95);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-bottom: 12px;
+      opacity: 0;
+    }
+
+    .upload-label-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.04);
+      border: 1px dashed rgba(255,255,255,0.2);
+      border-radius: 10px;
+      padding: 12px;
+      color: #f3f4f6;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .github-input {
+      width: 100%;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(139,92,246,0.4);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #f3f4f6;
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+    }
+
+    .import-btn {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      border: none;
+      border-radius: 10px;
+      padding: 10px;
+      color: #fff;
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .input-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 28px;
+      padding: 8px 8px 8px 18px;
+    }
+
+    .attach-btn {
+      width: 36px; height: 36px;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 50%;
+      color: #ef4444;
+      font-size: 22px;
+      font-weight: 300;
+      display: flex; align-items: center; justify-content: center;
+      transform: rotate(45deg);
+    }
+
+    .chat-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .send-btn {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      border-radius: 50%;
+      border: none;
+      color: #fff;
+      font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* message bubbles */
+    .msg-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+      width: 100%;
+      opacity: 0;
+    }
+
+    .msg-row.bot-row { justify-content: flex-start; }
+    .msg-row.user-row { justify-content: flex-end; }
+
+    .bot-orb-wrap {
+      width: 48px; height: 48px;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .orb-small {
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #818cf8, #4f46e5 40%, #7c3aed 70%, #1e0a44);
+      box-shadow: 0 0 14px 4px rgba(79,70,229,0.4), inset 0 1px 3px rgba(255,255,255,0.15);
+    }
+
+    .bubble {
+      max-width: 72%;
+      padding: 12px 18px;
+      border-radius: 18px;
+      font-size: 15px;
+      line-height: 1.6;
+      word-break: break-word;
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .bubble.user-bubble {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .bubble.bot-bubble {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(8px);
+      color: #f3f4f6;
+      border-bottom-left-radius: 4px;
+    }
+
+    /* ── SCENE 3: THE QUESTION ──────── */
+    #scene-question {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #05070a;
+    }
+
+    #q-input-bar {
+      width: 860px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(139,92,246,0.6);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 12px rgba(139,92,246,0.25);
+      border-radius: 28px;
+      padding: 12px 12px 12px 24px;
+      opacity: 0;
+    }
+
+    #q-input-text {
+      flex: 1;
+      font-family: 'Outfit', sans-serif;
+      font-size: 18px;
+      color: #f3f4f6;
+    }
+
+    .q-send-btn {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    #q-orb-loading {
+      margin-top: 40px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      opacity: 0;
+    }
+
+    .orb-loading {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #818cf8, #4f46e5 40%, #7c3aed 70%, #1e0a44);
+      box-shadow: 0 0 18px 6px rgba(79,70,229,0.5);
+    }
+
+    .typing-dots {
+      display: flex; gap: 6px; align-items: center;
+    }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    /* ── SCENE 4: THE ANSWER ──────────── */
+    #scene-answer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #05070a;
+      padding: 0 80px;
+    }
+
+    .answer-thread {
+      width: 900px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .answer-user-row {
+      display: flex;
+      justify-content: flex-end;
+      opacity: 0;
+    }
+
+    .answer-bot-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      opacity: 0;
+    }
+
+    .code-block {
+      background: #0d1117;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 16px 20px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #e2e8f0;
+      margin-top: 10px;
+      opacity: 0;
+    }
+
+    .code-kw { color: #c084fc; }
+    .code-fn { color: #60a5fa; }
+    .code-str { color: #86efac; }
+    .code-comment { color: #6b7280; font-style: italic; }
+    .code-const { color: #f97316; }
+
+    /* ── SCENE 5: OUTRO ─────────────── */
+    #scene-outro {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      background: #05070a;
+    }
+
+    #outro-pill {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 32px;
+      padding: 12px 32px;
+      font-size: 28px;
+      font-weight: 600;
+      color: #f3f4f6;
+      letter-spacing: 0.02em;
+      box-shadow: 0 0 32px 8px rgba(79,70,229,0.3), inset 0 1px 1px rgba(255,255,255,0.12);
+      opacity: 0;
+    }
+
+    #outro-tagline {
+      font-size: 22px;
+      font-weight: 400;
+      color: #94a3b8;
+      letter-spacing: 0.01em;
+      opacity: 0;
+    }
+  </style>
+</head>
+<body>
+
+<div id="root"
+  data-composition-id="root"
+  data-width="1920"
+  data-height="1080">
+
+  <!-- ═══════════════════════════════
+       SCENE 1 — HOOK — 0s to 3s
+  ══════════════════════════════════ -->
+  <div id="scene-hook" class="clip" data-start="0" data-duration="3" data-track-index="0">
+    <div id="hook-text">Ask your codebase.</div>
+    <div id="hook-orb-wrap">
+      <div class="orb" id="hook-orb"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════
+       SCENE 2 — IMPORT — 3s to 7s
+  ══════════════════════════════════ -->
+  <div id="scene-import" class="clip" data-start="3" data-duration="4" data-track-index="1">
+    <div class="chat-shell">
+      <div class="chat-header">
+        <div class="header-pill">DevDocs AI</div>
+        <div class="menu-btn">☰</div>
+      </div>
+      <div class="chat-body" id="import-chat-body">
+        <!-- bot confirmation appears here -->
+        <div class="msg-row bot-row" id="import-confirm-row">
+          <div class="bot-orb-wrap"><div class="orb-small"></div></div>
+          <div class="bubble bot-bubble">Successfully imported Github Repository !</div>
+        </div>
+      </div>
+      <div class="bottom-dock">
+        <div class="attach-popup" id="import-popup">
+          <div class="upload-label-btn">📎 Upload Zip Codebase</div>
+          <div class="github-input" id="github-input-display">https://github.com/ChandanCodes18/devdoc-rag</div>
+          <div class="import-btn">Import</div>
+        </div>
+        <div class="input-bar">
+          <div class="attach-btn">+</div>
+          <div class="chat-input">Ask anything...</div>
+          <div class="send-btn">↑</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════
+       SCENE 3 — THE QUESTION — 7s to 11s
+  ══════════════════════════════════ -->
+  <div id="scene-question" class="clip" data-start="7" data-duration="4" data-track-index="2">
+    <div id="q-input-bar">
+      <div id="q-input-text">How does the file upload work?</div>
+      <div class="q-send-btn">↑</div>
+    </div>
+    <div id="q-orb-loading">
+      <div class="orb-loading" id="q-orb"></div>
+      <div class="typing-dots">
+        <div class="dot" id="d1"></div>
+        <div class="dot" id="d2"></div>
+        <div class="dot" id="d3"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════
+       SCENE 4 — THE ANSWER — 11s to 17s
+  ══════════════════════════════════ -->
+  <div id="scene-answer" class="clip" data-start="11" data-duration="6" data-track-index="3">
+    <div class="answer-thread">
+      <!-- user question echo -->
+      <div class="answer-user-row" id="ans-user-row">
+        <div class="bubble user-bubble">How does the file upload work?</div>
+      </div>
+      <!-- bot answer -->
+      <div class="answer-bot-row" id="ans-bot-row">
+        <div class="bot-orb-wrap" style="flex-shrink:0;margin-top:4px;">
+          <div class="orb-small" id="ans-orb"></div>
+        </div>
+        <div>
+          <div class="bubble bot-bubble" style="max-width:100%;">
+            The upload uses a multipart <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-size:13px;">POST</code> to <code style="background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:4px;font-size:13px;">/api/upload/zip</code>. Here's the core:
+          </div>
+          <div class="code-block" id="ans-code">
+            <span class="code-const">const</span> formData = <span class="code-kw">new</span> <span class="code-fn">FormData</span>();<br>
+            formData.<span class="code-fn">append</span>(<span class="code-str">"codeFile"</span>, file);<br><br>
+            <span class="code-const">const</span> res = <span class="code-kw">await</span> <span class="code-fn">fetch</span>(<span class="code-str">`${API_URL}/api/upload/zip`</span>, {<br>
+            &nbsp;&nbsp;method: <span class="code-str">"POST"</span>,<br>
+            &nbsp;&nbsp;body: formData,<br>
+            });
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════
+       SCENE 5 — OUTRO — 17s to 20s
+  ══════════════════════════════════ -->
+  <div id="scene-outro" class="clip" data-start="17" data-duration="3" data-track-index="4">
+    <div id="outro-pill">DevDocs AI</div>
+    <div id="outro-tagline">Drop your repo. Talk to your code.</div>
+  </div>
+
+  <!-- ═══════════════════════════════
+       AUDIO
+  ══════════════════════════════════ -->
+  <!-- Music bed: vol-9, track 10, 0.32 vol -->
+  <audio id="bg-music"
+    data-start="0"
+    data-duration="20"
+    data-track-index="10"
+    data-volume="0.32"
+    src="assets/music/happy-beats-business-moves-vol-9-by-ende-dot-app.mp3">
+  </audio>
+
+  <!-- SFX 1: popup open / drop_001 at scene-2 start (3s) -->
+  <audio id="sfx-popup"
+    data-start="3.1"
+    data-duration="0.11"
+    data-track-index="11"
+    data-volume="0.65"
+    src="assets/sfx/interface/drop_001.ogg">
+  </audio>
+
+  <!-- SFX 2: import button click (~4.23s beat-lock) -->
+  <audio id="sfx-import-click"
+    data-start="4.23"
+    data-duration="0.01"
+    data-track-index="12"
+    data-volume="0.70"
+    src="assets/sfx/interface/click_002.ogg">
+  </audio>
+
+  <!-- SFX 3: confirmation arrives (drop, ~4.75s) -->
+  <audio id="sfx-confirm"
+    data-start="4.75"
+    data-duration="0.11"
+    data-track-index="13"
+    data-volume="0.60"
+    src="assets/sfx/interface/drop_001.ogg">
+  </audio>
+
+  <!-- SFX 4: send button fires (~10.54s beat-lock) -->
+  <audio id="sfx-send"
+    data-start="10.54"
+    data-duration="0.06"
+    data-track-index="14"
+    data-volume="0.70"
+    src="assets/sfx/ui/mouseclick1.ogg">
+  </audio>
+
+  <!-- SFX 5: code block lands (~12.65s beat-lock) -->
+  <audio id="sfx-bell"
+    data-start="12.65"
+    data-duration="1.48"
+    data-track-index="15"
+    data-volume="0.55"
+    src="assets/sfx/impact/impactBell_heavy_000.ogg">
+  </audio>
+
+  <!-- SFX 6: logo pulse at outro (17.1s) -->
+  <audio id="sfx-bong"
+    data-start="17.1"
+    data-duration="0.12"
+    data-track-index="16"
+    data-volume="0.60"
+    src="assets/sfx/interface/bong_001.ogg">
+  </audio>
+
+</div>
+
+<script>
+gsap.registerPlugin && gsap.registerPlugin();
+
+const tl = gsap.timeline({ paused: true });
+
+// ─── SCENE 1: HOOK (0s – 3s) ─────────────────────────
+// Scene fades in
+tl.to("#scene-hook", { opacity: 1, duration: 0.01 }, 0);
+
+// Hook text fades up
+tl.fromTo("#hook-text",
+  { opacity: 0, y: 20 },
+  { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" },
+  0.3
+);
+
+// Orb fades in and pulses
+tl.fromTo("#hook-orb-wrap",
+  { opacity: 0, scale: 0.8 },
+  { opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.4)" },
+  0.8
+);
+
+// Orb gentle pulse
+tl.to("#hook-orb",
+  { scale: 1.08, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: 1 },
+  1.2
+);
+
+// Scene 1 fade out
+tl.to("#scene-hook", { opacity: 0, duration: 0.4, ease: "power1.in" }, 2.6);
+
+
+// ─── SCENE 2: IMPORT (3s – 7s) ─────────────────────────
+tl.to("#scene-import", { opacity: 1, duration: 0.01 }, 3);
+
+// Popup slides up
+tl.fromTo("#import-popup",
+  { opacity: 0, y: 8 },
+  { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" },
+  3.1
+);
+
+// Import button highlight (simulated click at beat 4.23s — relative: 1.23s into scene)
+tl.to("#import-popup .import-btn",
+  { scale: 0.96, duration: 0.1 },
+  4.13
+);
+tl.to("#import-popup .import-btn",
+  { scale: 1, duration: 0.15, ease: "back.out(2)" },
+  4.23
+);
+
+// Popup collapses
+tl.to("#import-popup",
+  { opacity: 0, y: -6, duration: 0.3, ease: "power1.in" },
+  4.5
+);
+
+// Confirmation arrives (~4.75s)
+tl.fromTo("#import-confirm-row",
+  { opacity: 0, x: -16 },
+  { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" },
+  4.75
+);
+
+// Scene 2 fade out
+tl.to("#scene-import", { opacity: 0, duration: 0.4 }, 6.6);
+
+
+// ─── SCENE 3: THE QUESTION (7s – 11s) ─────────────────────────
+tl.to("#scene-question", { opacity: 1, duration: 0.01 }, 7);
+
+// Input bar fades in
+tl.fromTo("#q-input-bar",
+  { opacity: 0, scale: 0.97 },
+  { opacity: 1, scale: 1, duration: 0.5, ease: "power2.out" },
+  7.2
+);
+
+// Animate typed text appearing (character-by-character effect using clip)
+// We'll do a wipe reveal via scaleX on a mask
+tl.fromTo("#q-input-text",
+  { opacity: 0 },
+  { opacity: 1, duration: 0 },
+  7.2
+);
+
+// Send button flash (beat-lock ~10.54s — within scene at 3.54s offset)
+tl.to("#q-input-bar",
+  { scale: 0.99, boxShadow: "0 0 24px rgba(139,92,246,0.5)", duration: 0.12 },
+  10.42
+);
+tl.to("#q-input-bar",
+  { scale: 1, duration: 0.2, ease: "back.out(1.5)" },
+  10.54
+);
+
+// Input bar fades away (sent)
+tl.to("#q-input-bar",
+  { opacity: 0, y: -8, duration: 0.3, ease: "power1.in" },
+  10.7
+);
+
+// Orb loading state appears
+tl.fromTo("#q-orb-loading",
+  { opacity: 0, scale: 0.9 },
+  { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(1.4)" },
+  10.8
+);
+
+// Typing dots bounce
+tl.to("#d1", { y: -6, duration: 0.3, ease: "sine.inOut", repeat: 3, yoyo: true }, 10.9);
+tl.to("#d2", { y: -6, duration: 0.3, ease: "sine.inOut", repeat: 3, yoyo: true }, 11.0);
+tl.to("#d3", { y: -6, duration: 0.3, ease: "sine.inOut", repeat: 3, yoyo: true }, 11.1);
+
+// Orb pulse during loading
+tl.to("#q-orb", { scale: 1.12, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: 3 }, 10.9);
+
+// Scene 3 fade out
+tl.to("#scene-question", { opacity: 0, duration: 0.3 }, 10.7);
+
+
+// ─── SCENE 4: THE ANSWER (11s – 17s) ─────────────────────────
+tl.to("#scene-answer", { opacity: 1, duration: 0.01 }, 11);
+
+// User message re-echo (already visible, for context)
+tl.fromTo("#ans-user-row",
+  { opacity: 0, x: 20 },
+  { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" },
+  11.2
+);
+
+// Bot bubble fades in
+tl.fromTo("#ans-bot-row",
+  { opacity: 0, x: -16 },
+  { opacity: 1, x: 0, duration: 0.5, ease: "power2.out" },
+  11.7
+);
+
+// Orb steady glow (audio-reactive proxy — subtle scale pulse)
+tl.to("#ans-orb", { scale: 1.06, duration: 0.8, ease: "sine.inOut", yoyo: true, repeat: 4 }, 11.7);
+
+// Code block slides in — beat-locked to 12.65s strong cue
+tl.fromTo("#ans-code",
+  { opacity: 0, y: 12 },
+  { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" },
+  12.5  // beat-lock: 12.65s ±0.15
+);
+
+// Orb settles to a gentle glow after code appears
+tl.to("#ans-orb", { scale: 1, duration: 0.3, overwrite: "auto" }, 13.2);
+
+// Scene 4 hold — fade out toward outro
+tl.to("#scene-answer", { opacity: 0, duration: 0.6, ease: "power1.in" }, 16.4);
+
+
+// ─── SCENE 5: OUTRO (17s – 20s) ─────────────────────────
+tl.to("#scene-outro", { opacity: 1, duration: 0.01 }, 17);
+
+// Logo pill pulses in
+tl.fromTo("#outro-pill",
+  { opacity: 0, scale: 0.88 },
+  { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" },
+  17.1  // beat-lock near strong cue
+);
+
+// Subtle glow pulse on logo
+tl.to("#outro-pill",
+  { boxShadow: "0 0 48px 12px rgba(79,70,229,0.5), inset 0 1px 1px rgba(255,255,255,0.12)", duration: 0.4, ease: "sine.inOut", yoyo: true, repeat: 1 },
+  17.4
+);
+
+// Tagline fades in below logo
+tl.fromTo("#outro-tagline",
+  { opacity: 0, y: 8 },
+  { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" },
+  17.7
+);
+
+// Final fade to black
+tl.to("#scene-outro", { opacity: 0, duration: 0.5, ease: "power1.in" }, 19.5);
+tl.to("#root", { background: "#000000", duration: 0.5 }, 19.5);
+
+
+// Register timeline
+window.__timelines = window.__timelines || {};
+window.__timelines["root"] = tl;
+</script>
+
+</body>
+</html>

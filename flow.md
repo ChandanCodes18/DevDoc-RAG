@@ -1,94 +1,50 @@
-# Application Flow & Architecture
+# Application Data Flows
 
-This document outlines the execution flow, entry points, and API route lifecycles for the DevDoc-RAG application.
+> Log updated on: 2026-10-02
+> This file tracks the application data flow following the multi-session state management rewrite.
 
-## 1. High-Level Architecture
-The application follows a Client-Server architecture with a unified monorepo structure.
-* **Frontend (`client/`)**: React application bundled with Vite, hosted on Vercel.
-* **Backend (`server.js`)**: Node.js/Express application hosted on Render.
-* **Database**: Supabase PostgreSQL (with `pgvector` extension).
-* **AI Provider**: Google Generative AI (Gemini) for embeddings and LLM inference.
+## Core Data Structures
+```javascript
+// Array of ingested projects
+repositories: [{ id, repo_name, type, files, time }]
 
----
+// Array of conversations linked to projects
+chats: [{ id, repoId, title, subtitle, time, msgs }]
 
-## 2. Frontend Execution Flow
+// Dictionary mapping a specific chat session to its message history
+messagesByChat: {
+  [chatId]: [{ sender: 'user'|'bot', text: '...' }]
+}
+```
 
-### Entry Point
-* `client/src/main.jsx` initializes the React DOM and wraps the application in a `StrictMode` provider.
-* `client/src/App.jsx` is the core container managing global state (repositories, active chat, messages, sidebar UI).
+## 1. Context Switching Flow
+1. User clicks a repository item in the Sidebar.
+2. `activeRepoId` state updates.
+3. The system scans the `chats` array to find the first chat associated with that `repoId`.
+4. `activeChatId` state updates to match.
+5. Main window automatically reacts: `const messages = messagesByChat[activeChatId] || []`.
 
-### User Interactions
-1. **Repository Selection / Sidebar Toggle**:
-   * Handled by the `.left-panel` UI.
-   * State variables `activeRepoId` and `repositories` dictate which context the user is querying against.
-2. **Uploading Code**:
-   * Users interact with the floating `+` button (`.attach-btn`).
-   * **GitHub URL**: Calls `handleGithubImport()`, sending a POST request to `/api/upload/github`. Inspects response status and renders detailed bot messages for errors or success.
-   * **ZIP Upload**: Calls `handleFileUpload()`, sending a POST FormData request to `/api/upload/zip`. Inspects response status, surfaces backend errors, updates repository state, and resets file input for re-uploads.
-   * **File Upload**: Sends a POST FormData request to `/api/upload`.
-3. **Chatting**:
-   * User types a message and clicks send.
-   * `handleSend()` is triggered.
-   * Sends the user's question, `activeRepoId`, and previous `messages` (chat history) to `/api/query`.
-   * The response is appended to the message array and visually rendered.
+## 2. Ingestion & Initial Chat Flow
+1. User uploads ZIP or provides GitHub URL via the `UploadPanel`.
+2. Backend processes and returns `repoId` and `repoName`.
+3. A new `chatId` is generated using `Date.now()`.
+4. The repo object is pushed to `repositories`.
+5. The chat object is pushed to `chats`.
+6. `messagesByChat` is seeded with `[newChatId]: [{ sender: 'bot', text: 'Successfully ingested...' }]`.
+7. `UploadPanel` unmounts globally.
 
----
+## 3. Message Sending Flow
+1. User types and hits Send (on the Welcome Screen or inside an Active Chat).
+2. If `activeChatId` is null (e.g., sending directly from the Welcome Screen), a new `chatId` is immediately generated and linked to the `activeRepoId`.
+3. The user's text is appended to `messagesByChat[currentChatId]`.
+4. A POST request is sent to `/api/query` containing the `repoId` and the current `history` array (from `messagesByChat`).
+5. The backend returns an answer.
+6. The bot's answer is appended to `messagesByChat[currentChatId]`.
+7. The sidebar `chats` array maps over its state to increment the `msgs` count by 2 and sets the `subtitle` to the user's latest prompt.
 
-## 3. Backend API Routes & Data Flow
-
-The backend entry point is `server.js`. It initializes Express, configures CORS, and connects to the Supabase PostgreSQL connection pool.
-
-### A. Single File Upload (`POST /api/upload`)
-1. **Multer Middleware**: Intercepts the request and buffers the uploaded file.
-2. **Validation**: Checks file extension against the `EXTENSION_TO_LANGUAGE` map.
-3. **Chunking**: Passes the file text to LangChain's `RecursiveCharacterTextSplitter.fromLanguage` with `chunkSize: 1200, chunkOverlap: 150`.
-4. **Filtering**: Removes any chunks that contain only whitespace/newlines to prevent database errors.
-5. **Embedding**: Sends valid chunks to Google `gemini-embedding-001` to generate 768-dimensional vectors.
-6. **Storage**: 
-   * Checks if "Test Repo" exists in the `repositories` table; inserts if not.
-   * Loops through chunks and inserts `[repoId, file_path, file_extension, start_line, end_line, chunk_content, vector]` into the `code_chunks` table.
-
-### B. ZIP File Upload (`POST /api/upload/zip`)
-1. **Multer Middleware**: Buffers the uploaded ZIP archive in memory.
-2. **In-Memory Extraction**: Uses `adm-zip` to extract file entries without writing to disk.
-3. **Smart Path & Asset Filtering (`isIgnoredPath`)**:
-   * Skips directory entries, OS metadata (`__MACOSX`, `.DS_Store`, `Thumbs.db`).
-   * Skips dependency and build directories (`node_modules`, `dist`, `build`, `out`, `.next`, `.nuxt`, `coverage`, `.cache`, `.vscode`, `.idea`, `vendor`).
-   * Skips lockfiles (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `composer.lock`), minified assets (`*.min.js`, `*.min.css`, `*.bundle.js`, `*.map`), and secrets (`.env`).
-   * Skips files exceeding 150 KB to prevent minified bundles from freezing processing.
-   * Validates code extensions against `EXTENSION_TO_LANGUAGE`.
-4. **Repository Creation**: Inserts the ZIP base name into `repositories` and retrieves `repoId`.
-5. **Batch Ingestion Pipeline (`ingestCodeFiles`)**:
-   * **Syntax-Aware Splitting**: Chunks each file using LangChain's `RecursiveCharacterTextSplitter.fromLanguage` (`chunkSize: 1200, chunkOverlap: 150`).
-   * **Whitespace Guard**: Discards blank or whitespace-only chunks to prevent 0-dimension `pgvector` crashes.
-   * **Batched Embeddings**: Groups all project chunks into batches of 50. Calls Google Gemini `embedDocuments()` once per batch, staying well within Google's 15 Requests Per Minute (RPM) free-tier quota.
-   * **Multi-Row SQL Bulk Insert**: Inserts each 50-chunk batch into Supabase PostgreSQL using a single multi-row parameterized `INSERT INTO code_chunks VALUES (...)` query, slashing database round-trips from thousands to ~5 and reducing write time to $<1$ second.
-
-### C. GitHub Repository Import (`POST /api/upload/github`)
-1. **URL Parsing & Sanitation**: `extractGithubAccountAndRepo()` parses standard web, SSH, and `.git` URLs to extract the account owner and project name.
-2. **Authenticated Branch Fetch**:
-   * Attaches sanitized `GITHUB_TOKEN` authorization header via `getGithubHeaders()`.
-   * Calls GitHub API `https://api.github.com/repos/{user}/{repo}` to identify the default branch (e.g., `main`).
-   * Includes graceful error detection for rate limits (403/429), bad credentials (401), and non-existent/private repos (404).
-3. **Recursive Tree Fetch**: Calls GitHub Tree API `https://api.github.com/repos/{user}/{repo}/git/trees/{branch}?recursive=1` to get a flat list of every file in the repo.
-4. **Path & Extension Filtering**: Filters tree entries through `isIgnoredPath()` and `typeOfFile()`.
-5. **Parallel Raw Code Download**:
-   * Instead of sequential downloads, fetches code concurrently in batches of 10 files using `Promise.all()` from `https://raw.githubusercontent.com/...`.
-   * Filters out empty or failed files.
-6. **Repository Record Setup**: Inserts `projectName` into `repositories` to obtain `repoId`.
-7. **Unified Batch Ingestion**: Invokes `ingestCodeFiles()` for syntax-aware splitting, 50-chunk batched Gemini embeddings, and multi-row bulk SQL insertion into `code_chunks`.
-
-### D. Chat Query (`POST /api/query`)
-1. **Payload Extraction**: Receives `question`, `repoId`, and `history`.
-2. **Query Condensation (Conversational Memory)**:
-   * If `history` exists, the backend prompts Gemini (`gemini-3.5-flash-lite`) to read the history and rewrite the user's latest follow-up question into a standalone, context-rich vector search query.
-3. **Query Embedding**: Passes the (condensed) search query to `gemini-embedding-001` to get a 768-dimension vector.
-4. **Vector Caching**: Caches the query vector using `lru-cache` to speed up identical repeated searches.
-5. **Vector Similarity Search**:
-   * Executes the Supabase RPC function `match_code_chunks(query_embedding, match_threshold, match_count, repo_id)`.
-   * PostgreSQL computes cosine similarity (`<=>`) and returns the top 10 most relevant code chunks.
-6. **Context Assembly**: Joins the returned code chunks into a single formatted string (`contextString`).
-7. **LLM Inference**: 
-   * Constructs a final prompt containing the System Directives, Chat History, Code Context, and the User Question.
-   * Sends the prompt to `gemini-3.5-flash-lite`.
-8. **Response**: Returns the final AI-generated answer to the frontend.
+## 4. Deletion Flow
+1. User clicks delete on a Chat in the sidebar.
+2. `CustomDialog` intercept triggers.
+3. Upon confirmation, the chat is filtered out of the `chats` array.
+4. The corresponding key is deleted from `messagesByChat` to free up memory.
+5. The system attempts to select the next available chat for the current repository. If none exist, it falls back to the Welcome Screen.

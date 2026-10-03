@@ -109,15 +109,17 @@ function CustomDialog({ isOpen, config, onClose }) {
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth >= 1024);
   
-  // Start with empty data
+  // Data Model State
   const [repositories, setRepositories] = useState([]);
   const [activeRepoId, setActiveRepoId] = useState(null);
   const [chats, setChats] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
+  
+  // Maps chatId -> Array of message objects
+  const [messagesByChat, setMessagesByChat] = useState({});
 
   const [gitUrl, setGitUrl] = useState('');
   const [isAttachOpen, setIsAttachOpen] = useState(false);
@@ -125,10 +127,7 @@ export default function App() {
   const [uploadData, setUploadData] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
 
-  // Custom modal state
   const [dialogConfig, setDialogConfig] = useState(null);
-
-  // New Code Panel state
   const [isCodePanelOpen, setIsCodePanelOpen] = useState(false);
   const [codePanelContent, setCodePanelContent] = useState(null); 
 
@@ -136,8 +135,10 @@ export default function App() {
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
   const isMobile = useIsMobile();
+  
+  // Derived View State
+  const messages = activeChatId ? (messagesByChat[activeChatId] || []) : [];
   const inChat = messages.length > 0;
-
   const activeRepo = repositories.find((r) => r.id === activeRepoId);
   const activeChats = chats.filter((c) => c.repoId === activeRepoId);
 
@@ -184,14 +185,18 @@ export default function App() {
       setActiveRepoId(data.repoId);
       
       const newChatId = Date.now();
-      setChats(prev => [{ id: newChatId, repoId: data.repoId, title: 'New Conversation', subtitle: 'Start asking questions...', time: 'just now', msgs: 0 }, ...prev]);
+      setChats(prev => [{ id: newChatId, repoId: data.repoId, title: 'New Conversation', subtitle: 'Ingestion complete', time: 'just now', msgs: 1 }, ...prev]);
       setActiveChatId(newChatId);
 
+      setMessagesByChat(prev => ({
+        ...prev,
+        [newChatId]: [{ sender: 'bot', text: `Successfully ingested **${data.repoName}** — ${data.chunkCount || 0} code chunks across ${data.fileCount || 0} files.` }]
+      }));
+
       setIsAttachOpen(false);
-      setMessages([{ sender: 'bot', text: `Successfully ingested **${data.repoName}** — ${data.chunkCount || 0} code chunks across ${data.fileCount || 0} files.` }]);
     } catch (error) {
       setIsAttachOpen(false);
-      setMessages([{ sender: 'bot', text: error.message || 'Could not reach the server. Make sure the backend is running.' }]);
+      alert(error.message || 'Could not reach the server. Make sure the backend is running.');
     } finally {
       clearTimeout(t1); clearTimeout(t2);
       setIsLoading(false);
@@ -229,14 +234,18 @@ export default function App() {
       setGitUrl('');
       
       const newChatId = Date.now();
-      setChats(prev => [{ id: newChatId, repoId: data.repoId, title: 'New Conversation', subtitle: 'Start asking questions...', time: 'just now', msgs: 0 }, ...prev]);
+      setChats(prev => [{ id: newChatId, repoId: data.repoId, title: 'New Conversation', subtitle: 'Import complete', time: 'just now', msgs: 1 }, ...prev]);
       setActiveChatId(newChatId);
 
+      setMessagesByChat(prev => ({
+        ...prev,
+        [newChatId]: [{ sender: 'bot', text: data.message || 'Successfully imported Github Repository!' }]
+      }));
+
       setIsAttachOpen(false);
-      setMessages([{ sender: 'bot', text: data.message || 'Successfully imported Github Repository!' }]);
     } catch (error) {
       setIsAttachOpen(false);
-      setMessages([{ sender: 'bot', text: error.message || 'Could not reach the server. Make sure the backend is running.' }]);
+      alert(error.message || 'Could not reach the server. Make sure the backend is running.');
     } finally {
       clearTimeout(t1); clearTimeout(t2);
       setIsLoading(false);
@@ -248,7 +257,26 @@ export default function App() {
     const trimmed = inputValue.trim();
     if (!trimmed || isLoading) return;
 
-    setMessages((prev) => [...prev, { sender: 'user', text: trimmed }]);
+    let currentRepoId = activeRepoId;
+    if (!currentRepoId) {
+      alert('Please add or select a codebase first.');
+      return;
+    }
+
+    let currentChatId = activeChatId;
+    if (!currentChatId) {
+      currentChatId = Date.now();
+      setChats(prev => [{ id: currentChatId, repoId: currentRepoId, title: 'New Conversation', subtitle: trimmed, time: 'just now', msgs: 0 }, ...prev]);
+      setActiveChatId(currentChatId);
+    }
+
+    const currentHistory = messagesByChat[currentChatId] || [];
+
+    setMessagesByChat(prev => ({
+      ...prev,
+      [currentChatId]: [...(prev[currentChatId] || []), { sender: 'user', text: trimmed }]
+    }));
+    
     setInputValue('');
     setIsLoading(true);
 
@@ -258,23 +286,27 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: trimmed,
-          repoId: activeRepoId,
-          history: messages,
+          repoId: currentRepoId,
+          history: currentHistory, // send previous messages
         }),
       });
       const data = await res.json();
-      setMessages((prev) => [
+      
+      setMessagesByChat(prev => ({
         ...prev,
-        { sender: 'bot', text: data.answer || 'No response received.' },
-      ]);
+        [currentChatId]: [...(prev[currentChatId] || []), { sender: 'bot', text: data.answer || 'No response received.' }]
+      }));
+
+      setChats(prev => prev.map(c => 
+        c.id === currentChatId 
+          ? { ...c, msgs: (c.msgs || 0) + 2, subtitle: trimmed } 
+          : c
+      ));
     } catch {
-      setMessages((prev) => [
+      setMessagesByChat(prev => ({
         ...prev,
-        {
-          sender: 'bot',
-          text: 'Could not reach the server. Make sure the backend is running.',
-        },
-      ]);
+        [currentChatId]: [...(prev[currentChatId] || []), { sender: 'bot', text: 'Could not reach the server. Make sure the backend is running.' }]
+      }));
     } finally {
       setIsLoading(false);
     }
@@ -322,7 +354,7 @@ export default function App() {
         onSelectRepo={(id) => {
           setActiveRepoId(id);
           const firstChat = chats.find(c => c.repoId === id);
-          if (firstChat) setActiveChatId(firstChat.id);
+          setActiveChatId(firstChat ? firstChat.id : null);
           if (isMobile) setIsSidebarOpen(false);
         }}
         onSelectChat={(id) => {
@@ -374,8 +406,19 @@ export default function App() {
             title: 'Delete Chat',
             message: 'Are you sure you want to delete this conversation?',
             onConfirm: () => {
-              setChats(prev => prev.filter(c => c.id !== id));
-              if (activeChatId === id) setActiveChatId(null);
+              const updatedChats = chats.filter(c => c.id !== id);
+              setChats(updatedChats);
+              
+              setMessagesByChat(prev => {
+                const updated = { ...prev };
+                delete updated[id];
+                return updated;
+              });
+
+              if (activeChatId === id) {
+                 const remaining = updatedChats.filter(c => c.repoId === activeRepoId);
+                 setActiveChatId(remaining.length > 0 ? remaining[0].id : null);
+              }
             }
           });
         }}
@@ -526,7 +569,8 @@ export default function App() {
               {messages.map((msg, index) => (
                 <MessageBubble 
                   key={index} 
-                  message={msg} 
+                  message={msg}
+                  isLatest={index === messages.length - 1 && !isLoading} 
                   onShowInPanel={(lang, code, filename) => {
                     setCodePanelContent({ language: lang, code, filename });
                     setIsCodePanelOpen(true);
@@ -542,10 +586,9 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                 >
                   <div className="bot-avatar loading-avatar" aria-hidden="true">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="4" width="20" height="16" rx="4" ry="4" />
-                      <polyline points="6 9 10 12 6 15" />
-                      <line className="terminal-cursor" x1="12" y1="15" x2="18" y2="15" />
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="4 7 11 12 4 17" />
+                      <line className="terminal-cursor" x1="13" y1="19" x2="20" y2="19" />
                     </svg>
                   </div>
                 </motion.div>

@@ -11,12 +11,11 @@ const MSG_VARIANTS = {
 
 const MSG_TRANSITION = { duration: 0.28, ease: [0.22, 1, 0.36, 1] };
 
-function BotGlyph() {
+function BotGlyph({ isBlinking }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="4" width="20" height="16" rx="4" ry="4" />
-      <polyline points="6 9 10 12 6 15" />
-      <line className="terminal-cursor" x1="12" y1="15" x2="18" y2="15" />
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 7 11 12 4 17" />
+      <line className={isBlinking ? "terminal-cursor" : ""} x1="13" y1="19" x2="20" y2="19" />
     </svg>
   );
 }
@@ -154,7 +153,7 @@ function makeMarkdownComponents(onShowInPanel) {
   };
 }
 
-export default function MessageBubble({ message, onShowInPanel }) {
+export default function MessageBubble({ message, onShowInPanel, isLatest }) {
   const { sender, text } = message;
   const mdComponents = makeMarkdownComponents(onShowInPanel);
 
@@ -176,7 +175,7 @@ export default function MessageBubble({ message, onShowInPanel }) {
   return (
     <motion.div className="message-row bot" variants={MSG_VARIANTS} initial="hidden" animate="visible" transition={MSG_TRANSITION}>
       <div className="bot-avatar" aria-hidden="true">
-        <BotGlyph />
+        <BotGlyph isBlinking={isLatest} />
       </div>
       <div className="bubble-bot">
         <ReactMarkdown components={mdComponents}>
